@@ -924,7 +924,7 @@ uint32_t CVPMeshPlanner::waveFrontPropagation(const mesh_map::Vector& original_s
   path.push_front(std::pair<mesh_map::Vector, lvr2::FaceHandle>(current_pos, current_face));
 
   // move from the goal position towards the start position
-  while (current_pos.distance2(start) > config_.step_width && !cancel_planning_)
+  while (current_pos.distance(start) > config_.step_width && !cancel_planning_)
   {
     // move current pos ahead on the surface following the vector field,
     // updates the current face if necessary
