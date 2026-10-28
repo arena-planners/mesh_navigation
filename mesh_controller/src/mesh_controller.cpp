@@ -74,6 +74,7 @@ uint32_t MeshController::computeVelocityCommands(const geometry_msgs::msg::PoseS
 
   robot_pos_ = poseToPositionVector(pose);
   robot_dir_ = poseToDirectionVector(pose);
+  has_robot_pose_ = true;
   std::array<float, 3> bary_coords;
   std::array<mesh_map::Vector, 3> vertices;
 
@@ -192,6 +193,10 @@ uint32_t MeshController::computeVelocityCommands(const geometry_msgs::msg::PoseS
 bool MeshController::isGoalReached(double dist_tolerance, double angle_tolerance)
 {
   goal_dist_tolerance_ = static_cast<float>(dist_tolerance);
+  if (!has_robot_pose_)
+  {
+    return false;
+  }
   float goal_distance = (goal_pos_ - robot_pos_).length();
   return goal_distance <= goal_dist_tolerance_ && std::fabs(headingError()) <= static_cast<float>(angle_tolerance);
 }
@@ -221,6 +226,7 @@ bool MeshController::setPlan(const std::vector<geometry_msgs::msg::PoseStamped>&
 
   // reset current and ahead face
   cancel_requested_ = false;
+  has_robot_pose_ = false;
   current_face_ = lvr2::OptionalFaceHandle();
   return true;
 }

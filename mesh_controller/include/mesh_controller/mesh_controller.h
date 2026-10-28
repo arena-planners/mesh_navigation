@@ -188,6 +188,9 @@ private:
   //! the goal's and robot's orientation
   mesh_map::Normal goal_dir_, robot_dir_;
 
+  //! whether robot_pos_ and robot_dir_ were updated since the current plan was set
+  bool has_robot_pose_ = false;
+
   //! the robot's up axis
   mesh_map::Vector robot_normal_ = mesh_map::Vector(0, 0, 1);
 

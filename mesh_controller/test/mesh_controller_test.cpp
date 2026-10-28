@@ -220,3 +220,20 @@ TEST_F(MeshControllerTest, capsTheAngularVelocityInBothDirections)
   EXPECT_GT(cmd_vel.twist.angular.z, 0.0);
   EXPECT_LE(cmd_vel.twist.angular.z, 0.5);
 }
+
+TEST_F(MeshControllerTest, ignoresTheRobotPoseOfThePreviousPlan)
+{
+  initController([](float) {return 0.0f;});
+  ASSERT_TRUE(controller_->setPlan({pose(0.5, 0.5, 0, 0), pose(2.9, 0.5, 0, 0)}));
+  geometry_msgs::msg::TwistStamped cmd_vel;
+  EXPECT_TRUE(cycle(pose(2.9, 0.5, 0, 0), cmd_vel));
+
+  ASSERT_TRUE(controller_->setPlan({pose(0.1, 0.5, 0, 0), pose(2.9, 0.5, 0, 0)}));
+  EXPECT_FALSE(controller_->isGoalReached(dist_tolerance_, angle_tolerance_));
+  std::string message;
+  EXPECT_EQ(
+    controller_->computeVelocityCommands(pose(0.1, 0.5, 0, 0), geometry_msgs::msg::TwistStamped(), cmd_vel, message),
+    mbf_msgs::action::ExePath::Result::SUCCESS);
+  EXPECT_FALSE(controller_->isGoalReached(dist_tolerance_, angle_tolerance_));
+  EXPECT_GT(cmd_vel.twist.linear.x, 0.0);
+}
