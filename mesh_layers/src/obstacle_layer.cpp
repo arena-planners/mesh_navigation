@@ -15,7 +15,7 @@ std::optional<rclcpp::QoS> get_qos_profile_from_string(const std::string& str)
   {
     return rclcpp::QoS(1).reliable();
   }
-  else if ("BestEffort")
+  else if ("BestEffort" == str)
   {
     return rclcpp::QoS(1).best_effort();
   }

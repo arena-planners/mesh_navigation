@@ -63,6 +63,9 @@ if (BUILD_TESTING)
     $<INSTALL_INTERFACE:include>
   )
   target_link_libraries(${PROJECT_NAME}_inflation_layer_test ${PROJECT_NAME})
+
+  ament_add_gtest(${PROJECT_NAME}_obstacle_layer_test test/obstacle_layer_test.cpp)
+  target_link_libraries(${PROJECT_NAME}_obstacle_layer_test ${PROJECT_NAME})
 endif()
 
 ament_export_include_directories(include)
