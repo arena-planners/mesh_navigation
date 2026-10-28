@@ -136,6 +136,12 @@ public:
   float gaussValue(const float& sigma_squared, const float& value);
 
   /**
+   * Signed angle from the robot's heading to the goal's heading about the robot's up axis
+   * @return              heading error in radians, positive if the goal heading is counterclockwise
+   */
+  float headingError() const;
+
+  /**
    * Computes the angular and linear velocity
    * @param robot_pos     robot position
    * @param robot_dir     robot orientation
@@ -173,6 +179,12 @@ private:
 
   //! the goal's and robot's orientation
   mesh_map::Normal goal_dir_, robot_dir_;
+
+  //! the robot's up axis
+  mesh_map::Vector robot_normal_ = mesh_map::Vector(0, 0, 1);
+
+  //! distance to the goal within which the robot turns in place to the goal heading
+  float goal_dist_tolerance_ = 0.0;
 
   //! The triangle on which the robot is located
   lvr2::OptionalFaceHandle current_face_;

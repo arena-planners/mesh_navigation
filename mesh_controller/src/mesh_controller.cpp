@@ -157,9 +157,21 @@ uint32_t MeshController::computeVelocityCommands(const geometry_msgs::msg::PoseS
   mesh_map::Normal mesh_dir = opt_dir.get().normalized();
   float cost = map_ptr_->costAtPosition(handles, bary_coords);
   const mesh_map::Normal& mesh_normal = poseToDirectionVector(pose, tf2::Vector3(0,0,1));
-  std::array<float, 2> velocities = naiveControl(robot_pos_, robot_dir_, mesh_dir, mesh_normal, cost);
-  cmd_vel.twist.linear.x = std::min(config_.max_lin_velocity, velocities[0] * config_.lin_vel_factor);
-  cmd_vel.twist.angular.z = std::min(config_.max_ang_velocity, velocities[1] * config_.ang_vel_factor);
+  robot_normal_ = mesh_map::Vector(mesh_normal.x, mesh_normal.y, mesh_normal.z);
+  if ((goal_pos_ - robot_pos_).length() <= goal_dist_tolerance_)
+  {
+    const float heading_error = headingError();
+    const float max_angle = config_.max_angle * M_PI / 180.0;
+    cmd_vel.twist.linear.x = 0.0;
+    cmd_vel.twist.angular.z = copysignf(
+        config_.max_ang_velocity * std::min(1.0f, std::fabs(heading_error) / max_angle), heading_error);
+  }
+  else
+  {
+    std::array<float, 2> velocities = naiveControl(robot_pos_, robot_dir_, mesh_dir, mesh_normal, cost);
+    cmd_vel.twist.linear.x = std::min(config_.max_lin_velocity, velocities[0] * config_.lin_vel_factor);
+    cmd_vel.twist.angular.z = std::min(config_.max_ang_velocity, velocities[1] * config_.ang_vel_factor);
+  }
   cmd_vel.header.stamp = node_->now();
 
   if (cancel_requested_)
@@ -171,9 +183,22 @@ uint32_t MeshController::computeVelocityCommands(const geometry_msgs::msg::PoseS
 
 bool MeshController::isGoalReached(double dist_tolerance, double angle_tolerance)
 {
+  goal_dist_tolerance_ = static_cast<float>(dist_tolerance);
   float goal_distance = (goal_pos_ - robot_pos_).length();
-  float angle = acos(goal_dir_.dot(robot_dir_));
-  return goal_distance <= static_cast<float>(dist_tolerance) && angle <= static_cast<float>(angle_tolerance);
+  return goal_distance <= goal_dist_tolerance_ && std::fabs(headingError()) <= static_cast<float>(angle_tolerance);
+}
+
+float MeshController::headingError() const
+{
+  const mesh_map::Vector robot_dir(robot_dir_.x, robot_dir_.y, robot_dir_.z);
+  const mesh_map::Vector goal_dir(goal_dir_.x, goal_dir_.y, goal_dir_.z);
+  const mesh_map::Vector robot_heading = robot_dir - robot_normal_ * robot_dir.dot(robot_normal_);
+  const mesh_map::Vector goal_heading = goal_dir - robot_normal_ * goal_dir.dot(robot_normal_);
+  if (robot_heading.length() < 1e-6 || goal_heading.length() < 1e-6)
+  {
+    return M_PI;
+  }
+  return atan2(robot_heading.cross(goal_heading).dot(robot_normal_), robot_heading.dot(goal_heading));
 }
 
 bool MeshController::setPlan(const std::vector<geometry_msgs::msg::PoseStamped>& plan)
