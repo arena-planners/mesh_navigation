@@ -113,6 +113,18 @@ uint32_t DijkstraMeshPlanner::makePlan(const geometry_msgs::msg::PoseStamped& st
     pose.pose = mesh_map::calculatePoseFromPosition(vec, goal_vec, normal, dir_length);
     cost += dir_length;
     plan.push_back(pose);
+
+    // Add the goal pose with correct orientation to the plan
+    pose.pose = goal_in_map.pose;
+    plan.push_back(pose);
+  }
+  else if (outcome == mbf_msgs::action::GetPath::Result::SUCCESS)
+  {
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header = header;
+    pose.pose = goal_in_map.pose;
+    cost = (goal_vec - start_vec).length();
+    plan.push_back(pose);
   }
 
   RCLCPP_INFO_STREAM(node_->get_logger(), "Path length: " << cost << "m");
