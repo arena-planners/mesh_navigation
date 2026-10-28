@@ -35,6 +35,7 @@
  *
  */
 
+#include <algorithm>
 #include <lvr2/geometry/HalfEdgeMesh.hpp>
 #include <lvr2/util/Meap.hpp>
 #include <mbf_msgs/action/exe_path.hpp>
@@ -168,7 +169,12 @@ uint32_t MeshController::computeVelocityCommands(const geometry_msgs::msg::PoseS
   }
   else
   {
-    std::array<float, 2> velocities = naiveControl(robot_pos_, robot_dir_, mesh_dir, mesh_normal, cost);
+    const float lookahead_cost = lookaheadCost(face, mesh_dir);
+    std::array<float, 2> velocities = naiveControl(robot_pos_, robot_dir_, mesh_dir, mesh_normal, std::max(cost, lookahead_cost));
+    if (!(lookahead_cost < config_.cost_limit))
+    {
+      velocities[0] = 0.0;
+    }
     cmd_vel.twist.linear.x = std::min(config_.max_lin_velocity, velocities[0] * config_.lin_vel_factor);
     cmd_vel.twist.angular.z = std::min(config_.max_ang_velocity, velocities[1] * config_.ang_vel_factor);
   }
@@ -242,6 +248,46 @@ mesh_map::Vector MeshController::poseToPositionVector(const geometry_msgs::msg::
   return mesh_map::Vector(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
 }
 
+float MeshController::lookaheadCost(const lvr2::FaceHandle& face, const mesh_map::Normal& direction)
+{
+  const auto mesh = map_ptr_->mesh();
+  const auto& costs = map_ptr_->vertexCosts();
+  const float step = 0.05;
+  const float distance = std::min(static_cast<float>(config_.lookahead_distance), (goal_pos_ - robot_pos_).length());
+  mesh_map::Vector pos = robot_pos_;
+  mesh_map::Vector dir(direction.x, direction.y, direction.z);
+  lvr2::FaceHandle current_face = face;
+  float max_cost = 0.0;
+  for (float travelled = step; travelled <= distance; travelled += step)
+  {
+    pos += dir * step;
+    const auto search_res_opt = map_ptr_->searchNeighbourFaces(
+        pos, current_face, config_.max_search_radius, config_.max_search_distance);
+    if (!search_res_opt)
+    {
+      break;
+    }
+    current_face = std::get<0>(*search_res_opt);
+    const std::array<float, 3>& bary_coords = std::get<2>(*search_res_opt);
+    pos = mesh_map::linearCombineBarycentricCoords(std::get<1>(*search_res_opt), bary_coords);
+    const std::array<lvr2::VertexHandle, 3> handles = mesh->getVerticesOfFace(current_face);
+    if (current_face != face)
+    {
+      for (const auto& vertex : handles)
+      {
+        max_cost = std::max(max_cost, costs[vertex]);
+      }
+    }
+    const auto opt_dir = map_ptr_->directionAtPosition(vector_map_, handles, bary_coords);
+    if (!opt_dir)
+    {
+      break;
+    }
+    dir = opt_dir.get().normalized();
+  }
+  return max_cost;
+}
+
 float MeshController::gaussValue(const float& sigma_squared, const float& value)
 {
   return exp(-value * value / 2 * sigma_squared) / sqrt(2 * M_PI * sigma_squared);
@@ -263,6 +309,12 @@ std::array<float, 2> MeshController::naiveControl(
   const float max_angle = config_.max_angle * M_PI / 180.0;
   const float max_linear = config_.max_lin_velocity;
   float linear_velocity = phi <= max_angle ? max_linear - (phi * max_linear / max_angle) : 0.0;
+  const float cost_ratio = std::isfinite(mesh_cost) ? std::clamp(mesh_cost / static_cast<float>(config_.cost_limit), 0.0f, 1.0f) : 1.0f;
+  linear_velocity *= 1.0 - config_.cost_slowdown * cost_ratio;
+  if (config_.arrival_fading > 0.0)
+  {
+    linear_velocity *= std::min(1.0f, (goal_pos_ - robot_pos).length() / static_cast<float>(config_.arrival_fading));
+  }
   return { linear_velocity, angular_velocity };
 }
 
@@ -287,6 +339,12 @@ rcl_interfaces::msg::SetParametersResult MeshController::reconfigureCallback(std
       config_.max_search_radius = parameter.as_double();
     } else if (parameter.get_name() == name_ + ".max_search_distance") {
       config_.max_search_distance = parameter.as_double();
+    } else if (parameter.get_name() == name_ + ".lookahead_distance") {
+      config_.lookahead_distance = parameter.as_double();
+    } else if (parameter.get_name() == name_ + ".cost_limit") {
+      config_.cost_limit = parameter.as_double();
+    } else if (parameter.get_name() == name_ + ".cost_slowdown") {
+      config_.cost_slowdown = parameter.as_double();
     }
   }
 
@@ -376,6 +434,33 @@ bool MeshController::initialize(const std::string& plugin_name,
     range.to_value = 2.0;
     descriptor.floating_point_range.push_back(range);
     config_.max_search_distance = node->declare_parameter(name_ + ".max_search_distance", config_.max_search_distance);
+  }
+  { // cost lookahead_distance
+    rcl_interfaces::msg::ParameterDescriptor descriptor;
+    descriptor.description = "Distance along the vector field ahead of the robot in which costs slow down or stop the linear velocity";
+    rcl_interfaces::msg::FloatingPointRange range;
+    range.from_value = 0.0;
+    range.to_value = 5.0;
+    descriptor.floating_point_range.push_back(range);
+    config_.lookahead_distance = node->declare_parameter(name_ + ".lookahead_distance", config_.lookahead_distance, descriptor);
+  }
+  { // cost cost_limit
+    rcl_interfaces::msg::ParameterDescriptor descriptor;
+    descriptor.description = "Vertex cost at or above which a vertex ahead of the robot stops the linear velocity";
+    rcl_interfaces::msg::FloatingPointRange range;
+    range.from_value = 0.01;
+    range.to_value = 10.0;
+    descriptor.floating_point_range.push_back(range);
+    config_.cost_limit = node->declare_parameter(name_ + ".cost_limit", config_.cost_limit, descriptor);
+  }
+  { // cost cost_slowdown
+    rcl_interfaces::msg::ParameterDescriptor descriptor;
+    descriptor.description = "Fraction by which the linear velocity is reduced at the cost limit";
+    rcl_interfaces::msg::FloatingPointRange range;
+    range.from_value = 0.0;
+    range.to_value = 1.0;
+    descriptor.floating_point_range.push_back(range);
+    config_.cost_slowdown = node->declare_parameter(name_ + ".cost_slowdown", config_.cost_slowdown, descriptor);
   }
 
   reconfiguration_callback_handle_ = node_->add_on_set_parameters_callback(std::bind(

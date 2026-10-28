@@ -4,10 +4,12 @@
 #include <mesh_map/mesh_map.h>
 #include <rclcpp/rclcpp.hpp>
 #include <unistd.h>
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -66,7 +68,7 @@ protected:
       .append_parameter_override("mesh_map.default_layer", "inflation")
       .append_parameter_override("mesh_map.height_diff.type", "mesh_layers/HeightDiffLayer")
       .append_parameter_override("mesh_map.height_diff.threshold", 0.1)
-      .append_parameter_override("mesh_map.height_diff.radius", 0.15)
+      .append_parameter_override("mesh_map.height_diff.radius", 0.4)
       .append_parameter_override("mesh_map.inflation.type", "mesh_layers/InflationLayer")
       .append_parameter_override("mesh_map.inflation.inputs", std::vector<std::string>{"height_diff"})
       .append_parameter_override("mesh_map.inflation.inscribed_radius", 0.1)
@@ -157,4 +159,47 @@ TEST_F(MeshControllerTest, reachesTheGoalHeadingOnASlope)
   robot_pose.pose.orientation.z = 0;
   robot_pose.pose.orientation.w = std::cos(pitch / 2);
   EXPECT_TRUE(cycle(robot_pose, cmd_vel));
+}
+
+TEST_F(MeshControllerTest, stopsBeforeLethalVerticesAhead)
+{
+  initController([](float x) {return x >= 2.0f && x <= 2.2f ? 0.3f : 0.0f;});
+  float lethal_x = std::numeric_limits<float>::infinity();
+  const auto mesh = mesh_map_ptr_->mesh();
+  for (const auto vH : mesh->vertices()) {
+    const auto & position = mesh->getVertexPosition(vH);
+    if (std::fabs(position.y - 0.5) < 0.01 && !(mesh_map_ptr_->vertexCosts()[vH] < 1.0)) {
+      lethal_x = std::min(lethal_x, position.x);
+    }
+  }
+  ASSERT_LT(lethal_x, 2.0);
+  ASSERT_GT(lethal_x, 1.5);
+  ASSERT_TRUE(controller_->setPlan({pose(0.3, 0.5, 0, 0), pose(2.8, 0.5, 0, 0)}));
+  geometry_msgs::msg::TwistStamped cmd_vel;
+
+  EXPECT_FALSE(cycle(pose(lethal_x - 1.2, 0.5, 0, 0), cmd_vel));
+  const double free_velocity = cmd_vel.twist.linear.x;
+  EXPECT_GT(free_velocity, 0.0);
+
+  EXPECT_FALSE(cycle(pose(lethal_x - 0.65, 0.5, 0, 0), cmd_vel));
+  EXPECT_GT(cmd_vel.twist.linear.x, 0.0);
+  EXPECT_LT(cmd_vel.twist.linear.x, free_velocity);
+
+  EXPECT_FALSE(cycle(pose(lethal_x - 0.45, 0.5, 0, 0), cmd_vel));
+  EXPECT_EQ(cmd_vel.twist.linear.x, 0.0);
+}
+
+TEST_F(MeshControllerTest, fadesTheLinearVelocityNearTheGoal)
+{
+  initController([](float) {return 0.0f;});
+  ASSERT_TRUE(controller_->setPlan({pose(0.3, 0.5, 0, 0), pose(2.0, 0.5, 0, 0)}));
+  geometry_msgs::msg::TwistStamped cmd_vel;
+
+  EXPECT_FALSE(cycle(pose(1.0, 0.5, 0, 0), cmd_vel));
+  const double free_velocity = cmd_vel.twist.linear.x;
+  EXPECT_GT(free_velocity, 0.0);
+
+  EXPECT_FALSE(cycle(pose(1.75, 0.5, 0, 0), cmd_vel));
+  EXPECT_GT(cmd_vel.twist.linear.x, 0.0);
+  EXPECT_LT(cmd_vel.twist.linear.x, free_velocity);
 }

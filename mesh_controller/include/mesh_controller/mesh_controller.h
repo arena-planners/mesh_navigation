@@ -142,11 +142,19 @@ public:
   float headingError() const;
 
   /**
+   * Follows the vector field from the robot position up to the lookahead distance
+   * @param face          the face the robot is located on
+   * @param direction     the vector field direction at the robot position
+   * @return              the highest vertex cost of the faces passed, excluding the robot's face
+   */
+  float lookaheadCost(const lvr2::FaceHandle& face, const mesh_map::Normal& direction);
+
+  /**
    * Computes the angular and linear velocity
    * @param robot_pos     robot position
    * @param robot_dir     robot orientation
    * @param mesh_dir      supposed orientation
-   * @param mesh_cost     cost value at robot position
+   * @param mesh_cost     cost value at and ahead of the robot position
    * @return              angular and linear velocity
    */
   std::array<float, 2> naiveControl(
@@ -210,6 +218,9 @@ private:
     double max_angle = 20.0;
     double max_search_radius = 0.4;
     double max_search_distance = 0.4;
+    double lookahead_distance = 0.5;
+    double cost_limit = 1.0;
+    double cost_slowdown = 0.5;
   } config_;
 };
 
