@@ -203,3 +203,20 @@ TEST_F(MeshControllerTest, fadesTheLinearVelocityNearTheGoal)
   EXPECT_GT(cmd_vel.twist.linear.x, 0.0);
   EXPECT_LT(cmd_vel.twist.linear.x, free_velocity);
 }
+
+TEST_F(MeshControllerTest, capsTheAngularVelocityInBothDirections)
+{
+  initController([](float) {return 0.0f;}, rclcpp::NodeOptions()
+    .append_parameter_override("mesh_controller.ang_vel_factor", 4.0)
+    .append_parameter_override("mesh_controller.max_ang_velocity", 0.5));
+  ASSERT_TRUE(controller_->setPlan({pose(0.3, 0.5, 0, 0), pose(2.8, 0.5, 0, 0)}));
+  geometry_msgs::msg::TwistStamped cmd_vel;
+
+  EXPECT_FALSE(cycle(pose(1.0, 0.5, 0, 3 * M_PI_4), cmd_vel));
+  EXPECT_LT(cmd_vel.twist.angular.z, 0.0);
+  EXPECT_GE(cmd_vel.twist.angular.z, -0.5);
+
+  EXPECT_FALSE(cycle(pose(1.0, 0.5, 0, -3 * M_PI_4), cmd_vel));
+  EXPECT_GT(cmd_vel.twist.angular.z, 0.0);
+  EXPECT_LE(cmd_vel.twist.angular.z, 0.5);
+}

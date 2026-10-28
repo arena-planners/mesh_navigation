@@ -175,8 +175,10 @@ uint32_t MeshController::computeVelocityCommands(const geometry_msgs::msg::PoseS
     {
       velocities[0] = 0.0;
     }
-    cmd_vel.twist.linear.x = std::min(config_.max_lin_velocity, velocities[0] * config_.lin_vel_factor);
-    cmd_vel.twist.angular.z = std::min(config_.max_ang_velocity, velocities[1] * config_.ang_vel_factor);
+    cmd_vel.twist.linear.x = std::clamp(
+        velocities[0] * config_.lin_vel_factor, -config_.max_lin_velocity, config_.max_lin_velocity);
+    cmd_vel.twist.angular.z = std::clamp(
+        velocities[1] * config_.ang_vel_factor, -config_.max_ang_velocity, config_.max_ang_velocity);
   }
   cmd_vel.header.stamp = node_->now();
 
