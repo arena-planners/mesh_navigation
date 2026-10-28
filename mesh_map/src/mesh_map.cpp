@@ -1078,9 +1078,11 @@ bool MeshMap::meshAhead(mesh_map::Vector& pos, lvr2::FaceHandle& face, const flo
   std::array<float, 3> bary_coords;
   float dist;
   // get barycentric coordinates of the current face or the next neighbour face
-  if (mesh_map::projectedBarycentricCoords(pos, mesh_ptr->getVertexPositionsOfFace(face), bary_coords, dist))
+  const std::array<Vector, 3> face_vertices = mesh_ptr->getVertexPositionsOfFace(face);
+  if (mesh_map::projectedBarycentricCoords(pos, face_vertices, bary_coords, dist))
   {
-
+    // project position onto surface
+    pos = mesh_map::linearCombineBarycentricCoords(face_vertices, bary_coords);
   }
   else if (auto search_res_opt = searchNeighbourFaces(pos, face, step_size, 0.4))
   {
